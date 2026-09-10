@@ -5,10 +5,10 @@ A practical Change Data Capture pipeline that captures PostgreSQL changes with D
 ## Architecture
 
 PostgreSQL
-? Debezium
-? Kafka
-? Python CDC Consumer
-? DuckDB
+→ Debezium
+→ Kafka
+→ Python CDC Consumer
+→ DuckDB
 
 ## Stack
 
@@ -57,10 +57,10 @@ The pipeline was also tested by replaying the Kafka topic from the beginning. Th
 
 Debezium operations are handled as follows:
 
-- `r` ? snapshot / upsert
-- `c` ? insert / upsert
-- `u` ? update / upsert
-- `d` ? delete
+- `r`  → snapshot / upsert
+- `c`  → insert / upsert
+- `u`  → update / upsert
+- `d`  → delete
 - tombstone ? ignored
 
 DuckDB changes are committed before the Kafka offset is acknowledged.
