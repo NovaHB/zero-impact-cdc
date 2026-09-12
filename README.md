@@ -4,89 +4,121 @@ A practical Change Data Capture pipeline that captures PostgreSQL changes with D
 
 ## Architecture
 
+```text
 PostgreSQL
-→ Debezium
-→ Kafka
-→ Python CDC Consumer
-→ DuckDB
+    ↓
+Debezium
+    ↓
+Kafka
+    ↓
+Python CDC Consumer
+    ↓
+DuckDB
+```
 
 ## Stack
 
-- PostgreSQL 16
-- Debezium 2.7.3.Final
-- Apache Kafka 3.7
-- Python
-- confluent-kafka
-- DuckDB
-- Docker Compose
+* PostgreSQL 16
+* Debezium 2.7.3.Final
+* Apache Kafka 3.7
+* Python
+* confluent-kafka
+* DuckDB
+* Docker Compose
 
 ## What this project demonstrates
 
-- PostgreSQL logical replication and WAL-based CDC
-- Debezium change events
-- Kafka event streaming
-- INSERT, UPDATE and DELETE propagation
-- Snapshot events
-- Debezium tombstone handling
-- Transactional DuckDB writes
-- Kafka offset acknowledgement after successful sink writes
-- Business-key idempotency
-- Replay resilience
+* WAL-based PostgreSQL CDC
+* Debezium and Kafka event streaming
+* INSERT, UPDATE and DELETE propagation
+* Snapshot and tombstone handling
+* Transactional DuckDB writes
+* Business-key idempotency
+* Kafka replay resilience
+* Schema evolution and drift detection
 
 ## Idempotency
 
-The DuckDB sink uses `nin` as the business key.
+The sink uses `nin` as the business key.
 
-This means multiple source events with different PostgreSQL IDs but the same NIN resolve to one logical person.
+Multiple PostgreSQL records with the same NIN resolve to one logical record in DuckDB.
 
-Example:
+```text
+PostgreSQL
 
-    PostgreSQL
-    id=100, nin=NIN-001
-    id=200, nin=NIN-001
-    id=300, nin=NIN-001
+id=100, nin=NIN-001
+id=200, nin=NIN-001
+id=300, nin=NIN-001
 
-    DuckDB
-    id=300, nin=NIN-001
+        ↓
 
-The latest event updates the existing logical record instead of creating another row.
+DuckDB
 
-The pipeline was also tested by replaying the Kafka topic from the beginning. The DuckDB dataset remained deduplicated by NIN.
+id=300, nin=NIN-001
+```
 
-## CDC event handling
+The latest event wins.
 
-Debezium operations are handled as follows:
+The pipeline was also tested by replaying the Kafka topic from the beginning without creating duplicate NINs.
 
-- `r`  → snapshot / upsert
-- `c`  → insert / upsert
-- `u`  → update / upsert
-- `d`  → delete
-- tombstone ? ignored
+## Schema Evolution
+
+The schema-evolution consumer handles changes to the PostgreSQL source schema without silently breaking the sink.
+
+* **New columns:** automatically added
+* **Removed columns:** detected while sink columns are retained
+* **Renames:** detected as potential renames
+* **Compatible type changes:** supported, e.g. `INTEGER → BIGINT`
+* **Unsafe type changes:** rejected with transaction rollback
+
+Schema fingerprints and drift events are stored in DuckDB for tracking.
+
+## Reliability
 
 DuckDB changes are committed before the Kafka offset is acknowledged.
 
-## Running the project
+If processing fails:
+
+```text
+DuckDB transaction → ROLLBACK
+Kafka offset       → NOT COMMITTED
+```
+
+This prevents failed events from being acknowledged as successfully processed.
+
+## Running
 
 Start the infrastructure:
 
-    docker compose up -d
+```powershell
+docker compose up -d
+```
 
-Then start the Python sink:
+Run the standard CDC consumer:
 
-    cd sink
-    python consumer.py
+```powershell
+cd sink
+python consumer.py
+```
 
-Changes made in PostgreSQL flow through Debezium and Kafka before being applied to DuckDB.
+Run the schema-evolution consumer:
 
-## Repository structure
+```powershell
+python consumer_schema_evolution.py
+```
 
-    zero-impact-cdc/
-    +-- docker-compose.yml
-    +-- README.md
-    +-- .gitignore
-    +-- sink/
-        +-- consumer.py
+## Repository Structure
 
-The DuckDB database is generated locally and is intentionally excluded from Git.
+```text
+zero-impact-cdc/
+├── docker-compose.yml
+├── README.md
+├── .gitignore
+└── sink/
+    ├── check_duckdb.py
+    ├── consumer.py
+    └── consumer_schema_evolution.py
+```
 
-The Python virtual environment is also excluded from Git.
+The DuckDB database and Python virtual environment are excluded from Git.
+
